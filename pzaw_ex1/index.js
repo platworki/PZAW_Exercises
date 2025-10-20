@@ -21,7 +21,7 @@ const server = createServer((req, res) => {
   if (!res.writableEnded && path === '/favicon.ico' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'image/x-icon' });
     res.end(favicon);
-  }
+  } 
 
   if (!res.writableEnded) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
