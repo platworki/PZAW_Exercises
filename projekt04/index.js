@@ -1,4 +1,6 @@
 import express from 'express';
+import session from 'express-session';
+import bcrypt from 'bcrypt';
 import db, { addTestData } from './database.js';
 
 const app = express();
