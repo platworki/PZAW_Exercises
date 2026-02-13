@@ -14,11 +14,11 @@ db.exec(`
 `);
 
 db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
-    is_admin INTEGER DEFAULT 0
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0
   )
 `);
 
@@ -27,8 +27,8 @@ export function addTestData() {
     
     if (count.count === 0) {
         const insert = db.prepare(`
-        INSERT INTO mountains (name, height, date_climbed, notes)
-        VALUES (?, ?, ?, ?)
+            INSERT INTO mountains (name, height, date_climbed, notes)
+            VALUES (?, ?, ?, ?)
         `);
         
         insert.run('Rysy', 2499, '2023-07-15', 'Super widok');

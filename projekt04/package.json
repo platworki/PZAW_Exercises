@@ -1,15 +1,15 @@
 {
-  "name": "projekt04",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "type": "module",
-  "dependencies": {
-    "bcrypt": "^6.0.0",
-    "better-sqlite3": "^12.6.2",
-    "express": "^5.2.1",
-    "express-session": "^1.19.0"
-  }
+    "name": "projekt04",
+    "version": "1.0.0",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "type": "module",
+    "dependencies": {
+        "bcrypt": "^6.0.0",
+        "better-sqlite3": "^12.6.2",
+        "express": "^5.2.1",
+        "express-session": "^1.19.0"
+    }
 }
