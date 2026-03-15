@@ -1,5 +1,6 @@
 import express from 'express';
 import session from 'express-session';
+import argon2 from 'argon2';
 import bcrypt from 'bcrypt';
 import db, { addTestData } from './database.js';
 
