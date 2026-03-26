@@ -22,19 +22,4 @@ db.exec(`
   )
 `);
 
-export function addTestData() {
-    const count = db.prepare('SELECT COUNT(*) as count FROM mountains').get();
-    
-    if (count.count === 0) {
-        const insert = db.prepare(`
-            INSERT INTO mountains (name, height, date_climbed, notes)
-            VALUES (?, ?, ?, ?)
-        `);
-        
-        insert.run('Rysy', 2499, '2023-07-15', 'Super widok');
-        insert.run('Giewont', 1895, '2023-08-20', 'Dużo turystów');
-        insert.run('Kasprowy Wierch', 1987, '2024-01-10', 'Trening przed Rysami');
-    }
-}
-
 export default db;

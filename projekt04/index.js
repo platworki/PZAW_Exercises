@@ -1,16 +1,18 @@
+import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
 import argon2 from 'argon2';
-import bcrypt from 'bcrypt';
-import db, { addTestData } from './database.js';
+import { queries } from './queries.js';
+import { requireLogin, csrfMiddleware, checkCsrf, isValidHeight, isValidPastDate, canEdit } from './middleware.js';
+import { mainPage, loginPage, registerPage, editPage, errorPage } from './templates.js';
 
 const app = express();
-const port = 8000;
+const port = process.env.PORT || 8000;
 
 app.use(express.urlencoded({ extended: true }));
 
 app.use(session({
-    secret: 'tajny_klucz_123',
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -19,258 +21,36 @@ app.use(session({
     }
 }));
 
-// Token middleware
-app.use((req, res, next) => {
-    if (!req.session.csrfToken) {
-        req.session.csrfToken = Math.random().toString(36).substring(2);
-    }
-    next();
-});
-
-function escapeHtml(unsafe) {
-    // Z neta zapożyczone
-    if (unsafe === null || unsafe === undefined){
-        return '';
-    }
-    return unsafe
-        .toString()
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-function isValidPastDate(dateString) {
-    if (!dateString){
-         return true;
-    }
-    const date = new Date(dateString);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return ((date <= today) && !isNaN(date.getTime()));
-}
-
-function isValidHeight(height) {
-    const num = parseInt(height);
-    return num > 0 && num < 9000; // Everest ~8848m
-}
-
-function requireLogin(req, res, next) {
-    if (!req.session.user) {
-        res.redirect('/login');
-        return;
-    }
-    next();
-}
-
-const admin = db.prepare('SELECT * FROM users WHERE username = ?').get('admin');
-
-if (!admin) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    db.prepare('INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)').run('admin', hash, 1);
-    console.log('Admin account created! Login: admin / admin123');
-}
-addTestData();
+app.use(csrfMiddleware);
 
 app.get('/', requireLogin, (req, res) => {
     const user = req.session.user;
-    let mountains;
-
-    if (user.is_admin) {
-        mountains = db.prepare('SELECT mountains.*, users.username FROM mountains LEFT JOIN users ON mountains.user_id = users.id ORDER BY mountains.id DESC').all();
-    } 
-    else {
-        mountains = db.prepare('SELECT * FROM mountains WHERE user_id = ? ORDER BY id DESC').all(user.id);
-    }
-
-    let mountainList = '';
-
-    for (let m of mountains) {
-        const canEdit = user.is_admin || m.user_id === user.id;
-
-        const safeName = escapeHtml(m.name);
-        const safeHeight = escapeHtml(m.height);
-        const safeDate = escapeHtml(m.date_climbed || '-');
-        const safeNotes = escapeHtml(m.notes || '-');
-        const safeUsername = escapeHtml(m.username || '-');
-
-        let adminUserColumn = '';
-        if (user.is_admin) {
-            adminUserColumn = `<td>${safeUsername}</td>`;
-        }
-        let actionButtons = '-';
-        if (canEdit) {
-            actionButtons = `
-            <a href="/mountain/${m.id}/edit">Edytuj</a>
-            <form method="POST" action="/mountain/${m.id}/delete" style="display:inline">
-            <input type="hidden" name="csrf" value="${req.session.csrfToken}">
-            <button type="submit">Usuń</button>
-            </form>
-        `;
-        }
-        mountainList += `
-        <tr>
-            <td>${safeName}</td>
-            <td>${safeHeight} m</td>
-            <td>${safeDate}</td>
-            <td>${safeNotes}</td>
-            ${adminUserColumn}
-            <td>${actionButtons}</td>
-        </tr>
-        `;
-    }
-
-    let adminLabel = '';
-    let adminHeader = '';
-
-    if (user.is_admin) {
-        adminLabel = ' (admin)';
-        adminHeader = '<th>Użytkownik</th>';
-    }
-
-    const safeUsername = escapeHtml(user.username);
-
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <title>Góry</title>
-        <style>
-            body { 
-                font-family: Arial;
-                max-width: 900px;
-                margin: 50px auto;
-            }
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 20px 0;
-            }
-            th, td {
-                border: 1px solid #ddd; padding: 8px;
-                text-align: left;
-            }
-            th {
-                background-color: #4CAF50; color: white;
-            }
-            input, textarea {
-                width: 100%;
-                padding: 5px;
-            }
-            button {
-                padding: 5px 10px;
-                cursor: pointer;
-            }
-            .topbar {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .error { 
-                color: red;
-                margin: 10px 0;
-            }
-        </style>
-        </head>
-        <body>
-            <div class="topbar">
-                <h1>Moje Góry</h1>
-                <div>
-                Zalogowany jako: <b>${safeUsername}</b>
-                ${adminLabel}
-                <form method="POST" action="/logout" style="display:inline">
-                    <input type="hidden" name="csrf" value="${req.session.csrfToken}">
-                    <button type="submit">Wyloguj</button>
-                </form>
-                </div>
-            </div>
-            
-            <h2>Dodaj nową górę</h2>
-            <form method="POST" action="/mountain">
-                <input type="hidden" name="csrf" value="${req.session.csrfToken}">
-                <p><input type="text" name="name" placeholder="Nazwa" required maxlength="100"></p>
-                <p><input type="number" name="height" placeholder="Wysokość (m)" required min="1" max="8900"></p>
-                <p><input type="date" name="date_climbed" max="${new Date().toISOString().split('T')[0]}"></p>
-                <p><textarea name="notes" placeholder="Notatki" rows="3" maxlength="500"></textarea></p>
-                <button type="submit">Dodaj</button>
-            </form>
-
-            <h2>Lista gór (${mountains.length})</h2>
-            <table>
-                <tr>
-                <th>Nazwa</th>
-                <th>Wysokość</th>
-                <th>Data zdobycia</th>
-                <th>Notatki</th>
-                ${adminHeader}
-                <th>Akcje</th>
-                </tr>
-                ${mountainList}
-            </table>
-        </body>
-        </html>
-    `);
+    const mountains = user.is_admin 
+        ? queries.mountains.findAllWithUsers.all()
+        : queries.mountains.findByUser.all(user.id);
+    
+    res.send(mainPage(user, mountains, req.session.csrfToken));
 });
 
 app.get('/login', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <title>Logowanie</title>
-        <style>
-            body {
-                font-family: Arial;
-                max-width: 400px;
-                margin: 100px auto; 
-            }
-            input {
-                width: 100%;
-                padding: 8px;
-                margin: 5px 0;
-            }
-            button {
-                padding: 8px 20px;
-                cursor: pointer;
-            }
-            .error {
-                color: red;
-            }
-        </style>
-        </head>
-        <body>
-            <h1>Logowanie</h1>
-            <form method="POST" action="/login">
-                <input type="hidden" name="csrf" value="${req.session.csrfToken}">
-                <p><input type="text" name="username" placeholder="Login" required maxlength="50"></p>
-                <p><input type="password" name="password" placeholder="Hasło" required></p>
-                <button type="submit">Zaloguj</button>
-            </form>
-            <p>Nie masz konta? <a href="/register">Zarejestruj się</a></p>
-        </body>
-        </html>
-    `);
+    res.send(loginPage(req.session.csrfToken));
 });
 
-app.post('/login', (req, res) => {
-    if (req.body.csrf !== req.session.csrfToken) {
-        return res.send('CSRF token invalid <a href="/login">Wróć</a>');
-    }
+app.post('/login', async (req, res) => {
+    if (!checkCsrf(req, res)) return;
 
     const { username, password } = req.body;
 
     if (!username || !password || username.length > 50) {
-        return res.send('Nieprawidłowe dane <a href="/login">Wróć</a>');
+        return res.send(errorPage('Nieprawidłowe dane'));
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-    if (!user || !bcrypt.compareSync(password, user.password)) {
-        res.send('Błędny login lub hasło <a href="/login">Wróć</a>');
-        return;
+    const user = queries.users.findByUsername.get(username);
+    
+    if (!user || !(await argon2.verify(user.password, password))) {
+        return res.send(errorPage('Błędny login lub hasło'));
     }
+    
     req.session.user = { 
         id: user.id, 
         username: user.username, 
@@ -280,211 +60,125 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/register', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <title>Rejestracja</title>
-        <style>
-            body {
-                font-family: Arial;
-                max-width: 400px;
-                margin: 100px auto;
-            }
-            input {
-                width: 100%;
-                padding: 8px;
-                margin: 5px 0;
-            }
-            button {
-                padding: 8px 20px;
-                cursor: pointer;
-            }
-        </style>
-        </head>
-        <body>
-            <h1>Rejestracja</h1>
-            <form method="POST" action="/register">
-                <input type="hidden" name="csrf" value="${req.session.csrfToken}">
-                <p><input type="text" name="username" placeholder="Login" required minlength="3" maxlength="50"></p>
-                <p><input type="password" name="password" placeholder="Hasło" required minlength="6"></p>
-                <button type="submit">Zarejestruj</button>
-            </form>
-            <p>Masz już konto? <a href="/login">Zaloguj się</a></p>
-        </body>
-        </html>
-    `);
+    res.send(registerPage(req.session.csrfToken));
 });
 
-app.post('/register', (req, res) => {
-    if (req.body.csrf !== req.session.csrfToken) {
-        return res.send('CSRF token invalid <a href="/register">Wróć</a>');
-    }
+app.post('/register', async (req, res) => {
+    if (!checkCsrf(req, res)) return;
 
-    const { username, password } = req.body;
+    const { username, password, password2 } = req.body;
 
     if (!username || !password || username.length < 3 || username.length > 50 || password.length < 6) {
-        return res.send('Login (3-50 znaków) i hasło (min 6 znaków) wymagane. <a href="/register">Wróć</a>');
+        return res.send(errorPage('Login (3-50 znaków) i hasło (min 6 znaków) wymagane'));
+    }
+    
+    if (password !== password2) {
+        return res.send(errorPage('Hasła nie są identyczne'));
     }
 
-    const existing = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    const existing = queries.users.findByUsername.get(username);
     if (existing) {
-        res.send('Login już zajęty <a href="/register">Wróć</a>');
-        return;
+        return res.send(errorPage('Login już zajęty'));
     }
-    const hash = bcrypt.hashSync(password, 10);
-    db.prepare('INSERT INTO users (username, password) VALUES (?, ?)').run(username, hash);
+    
+    const hash = await argon2.hash(password);
+    queries.users.insertRegular.run(username, hash);
     res.redirect('/login');
 });
 
 app.post('/logout', (req, res) => {
-    if (req.body.csrf !== req.session.csrfToken) {
-        return res.send('CSRF token invalid');
-    }
-
+    if (!checkCsrf(req, res)) return;
     req.session.destroy();
     res.redirect('/login');
 });
 
 app.post('/mountain', requireLogin, (req, res) => {
-    if (req.body.csrf !== req.session.csrfToken) {
-        return res.send('CSRF token invalid <a href="/">Wróć</a>');
-    }
+    if (!checkCsrf(req, res)) return;
 
     const { name, height, date_climbed, notes } = req.body;
 
-    // podstawowa walidacja
     if (!name || name.length > 100) {
-        return res.send('Nazwa wymagana (max 100 znaków) <a href="/">Wróć</a>');
+        return res.send(errorPage('Nazwa wymagana (max 100 znaków)'));
     }
     if (!isValidHeight(height)) {
-        return res.send('Wysokość musi być między 1 a 8900m <a href="/">Wróć</a>');
+        return res.send(errorPage('Wysokość musi być między 1 a 8900m'));
     }
     if (date_climbed && !isValidPastDate(date_climbed)) {
-        return res.send('Data musi być w przeszłości <a href="/">Wróć</a>');
+        return res.send(errorPage('Data musi być w przeszłości'));
     }
     
-    db.prepare(`
-        INSERT INTO mountains (name, height, date_climbed, notes, user_id)
-        VALUES (?, ?, ?, ?, ?)
-    `).run(name, height, date_climbed || null, notes || null, req.session.user.id);
+    queries.mountains.insert.run(
+        name, 
+        height, 
+        date_climbed || null, 
+        notes || null, 
+        req.session.user.id
+    );
 
     res.redirect('/');
 });
 
 app.get('/mountain/:id/edit', requireLogin, (req, res) => {
-    const user = req.session.user;
-    const mountain = db.prepare('SELECT * FROM mountains WHERE id = ?').get(req.params.id);
+    const mountain = queries.mountains.findById.get(req.params.id);
 
     if (!mountain) {
-        res.send('Góra nie znaleziona');
-        return;
+        return res.send(errorPage('Góra nie znaleziona'));
     }
-    if (!user.is_admin && mountain.user_id !== user.id) {
-        res.send('Brak dostępu');
-        return;
+    if (!canEdit(req.session.user, mountain)) {
+        return res.send(errorPage('Brak dostępu'));
     }
 
-    const safeName = escapeHtml(mountain.name);
-    const safeHeight = escapeHtml(mountain.height);
-    const dateValue = mountain.date_climbed || '';
-    const safeNotes = escapeHtml(mountain.notes || '');
-
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <title>Edytuj górę</title>
-        <style>
-            body {
-                font-family: Arial;
-                max-width: 600px;
-                margin: 50px auto;
-            }
-            input, textarea {
-                width: 100%;
-                padding: 5px;
-                margin: 5px 0;
-            }
-            button {
-                padding: 5px 10px;
-                cursor: pointer;
-            }
-        </style>
-        </head>
-        <body>
-            <h1>Edytuj: ${safeName}</h1>
-            <form method="POST" action="/mountain/${mountain.id}/edit">
-                <input type="hidden" name="csrf" value="${req.session.csrfToken}">
-                <p><input type="text" name="name" value="${safeName}" required maxlength="100"></p>
-                <p><input type="number" name="height" value="${safeHeight}" required min="1" max="8900"></p>
-                <p><input type="date" name="date_climbed" value="${dateValue}" max="${new Date().toISOString().split('T')[0]}"></p>
-                <p><textarea name="notes" rows="3" maxlength="500">${safeNotes}</textarea></p>
-                <button type="submit">Zapisz</button>
-                <a href="/">Anuluj</a>
-            </form>
-        </body>
-        </html>
-    `);
+    res.send(editPage(mountain, req.session.csrfToken));
 });
 
 app.post('/mountain/:id/edit', requireLogin, (req, res) => {
-    if (req.body.csrf !== req.session.csrfToken) {
-        return res.send('CSRF token invalid. <a href="/">Wróć</a>');
-    }
+    if (!checkCsrf(req, res)) return;
 
-    const user = req.session.user;
-    const mountain = db.prepare('SELECT * FROM mountains WHERE id = ?').get(req.params.id);
+    const mountain = queries.mountains.findById.get(req.params.id);
 
     if (!mountain) {
-        res.send('Góra nie znaleziona');
-        return;
+        return res.send(errorPage('Góra nie znaleziona'));
     }
-    if (!user.is_admin && mountain.user_id !== user.id) {
-        res.send('Brak dostępu');
-        return;
+    if (!canEdit(req.session.user, mountain)) {
+        return res.send(errorPage('Brak dostępu'));
     }
 
     const { name, height, date_climbed, notes } = req.body;
 
     if (!name || name.length > 100) {
-        return res.send('Nazwa wymagana (max 100 znaków) <a href="/">Wróć</a>');
+        return res.send(errorPage('Nazwa wymagana (max 100 znaków)'));
     }
     if (!isValidHeight(height)) {
-        return res.send('Wysokość musi być między 1m a 9000m <a href="/">Wróć</a>');
+        return res.send(errorPage('Wysokość musi być między 1 a 8900m'));
     }
     if (date_climbed && !isValidPastDate(date_climbed)) {
-        return res.send('Data musi być w przeszłości <a href="/">Wróć</a>');
+        return res.send(errorPage('Data musi być w przeszłości'));
     }
 
-    db.prepare(`
-        UPDATE mountains SET name = ?, height = ?, date_climbed = ?, notes = ?
-        WHERE id = ?
-    `).run(name, height, date_climbed || null, notes || null, req.params.id);
+    queries.mountains.update.run(
+        name, 
+        height, 
+        date_climbed || null, 
+        notes || null, 
+        req.params.id
+    );
 
     res.redirect('/');
 });
 
 app.post('/mountain/:id/delete', requireLogin, (req, res) => {
-    if (req.body.csrf !== req.session.csrfToken) {
-        return res.send('CSRF token invalid. <a href="/">Wróć</a>');
-    }
+    if (!checkCsrf(req, res)) return;
 
-    const user = req.session.user;
-    const mountain = db.prepare('SELECT * FROM mountains WHERE id = ?').get(req.params.id);
+    const mountain = queries.mountains.findById.get(req.params.id);
     
     if (!mountain) {
-        res.send('Góra nie znaleziona');
-        return;
+        return res.send(errorPage('Góra nie znaleziona'));
     }
-    if (!user.is_admin && mountain.user_id !== user.id) {
-        res.send('Brak dostępu');
-        return;
+    if (!canEdit(req.session.user, mountain)) {
+        return res.send(errorPage('Brak dostępu'));
     }
 
-    db.prepare('DELETE FROM mountains WHERE id = ?').run(req.params.id);
+    queries.mountains.delete.run(req.params.id);
     res.redirect('/');
 });
 
