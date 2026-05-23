@@ -42,13 +42,13 @@ app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password || username.length > 50) {
-        return res.send(errorPage('Nieprawidłowe dane'));
+        return res.send(loginPage(req.session.csrfToken, 'Nieprawidłowe dane'));
     }
 
     const user = queries.users.findByUsername.get(username);
     
     if (!user || !(await argon2.verify(user.password, password))) {
-        return res.send(errorPage('Błędny login lub hasło'));
+        return res.send(loginPage(req.session.csrfToken, 'Błędny login lub hasło'));
     }
     
     req.session.user = { 
@@ -69,16 +69,16 @@ app.post('/register', async (req, res) => {
     const { username, password, password2 } = req.body;
 
     if (!username || !password || username.length < 3 || username.length > 50 || password.length < 6) {
-        return res.send(errorPage('Login (3-50 znaków) i hasło (min 6 znaków) wymagane'));
+        return res.send(registerPage(req.session.csrfToken, 'Login (3-50 znaków) i hasło (min 6 znaków) wymagane'));
     }
     
     if (password !== password2) {
-        return res.send(errorPage('Hasła nie są identyczne'));
+        return res.send(registerPage(req.session.csrfToken, 'Hasła nie są identyczne'));
     }
 
     const existing = queries.users.findByUsername.get(username);
     if (existing) {
-        return res.send(errorPage('Login już zajęty'));
+        return res.send(registerPage(req.session.csrfToken, 'Login już zajęty'));
     }
     
     const hash = await argon2.hash(password);

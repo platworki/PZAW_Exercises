@@ -18,7 +18,7 @@ async function seed() {
         const adminUser = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
         const insert = db.prepare('INSERT INTO mountains (name, height, date_climbed, notes, user_id) VALUES (?, ?, ?, ?, ?)');
         
-        insert.run('Rysy', 2499, '2023-07-15', 'mmm morskie oczko', adminUser.id);
+        insert.run('Rysy', 2499, '2023-07-15', 'Oko', adminUser.id);
         insert.run('Giewont', 1895, '2023-08-20', 'Rozgrzewka na Rysy', adminUser.id);
         insert.run('Kasprowy Wierch', 1987, '2024-01-10', 'Zimno', adminUser.id);
         

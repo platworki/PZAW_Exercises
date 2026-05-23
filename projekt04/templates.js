@@ -90,9 +90,11 @@ export function mainPage(user, mountains, csrfToken) {
     return layout('Góry', content);
 }
 
-export function loginPage(csrfToken) {
+export function loginPage(csrfToken, error = '') {
+    const errorHtml = error ? `<div class="error">${escapeHtml(error)}</div>` : '';
     const content = `
         <h1>Logowanie</h1>
+        ${errorHtml}
         <form method="POST" action="/login">
             <input type="hidden" name="csrf" value="${csrfToken}">
             <input type="text" name="username" placeholder="Login" required maxlength="50">
@@ -104,9 +106,11 @@ export function loginPage(csrfToken) {
     return layout('Logowanie', content);
 }
 
-export function registerPage(csrfToken) {
+export function registerPage(csrfToken, error = '') {
+    const errorHtml = error ? `<div class="error">${escapeHtml(error)}</div>` : '';
     const content = `
         <h1>Rejestracja</h1>
+        ${errorHtml}
         <form method="POST" action="/register">
             <input type="hidden" name="csrf" value="${csrfToken}">
             <input type="text" name="username" placeholder="Login" required minlength="3" maxlength="50">
